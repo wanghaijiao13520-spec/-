@@ -1,0 +1,25 @@
+.env
+*.log
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+node_modules/
+
+# Generated reports, uploads, and customer data
+outputs/
+日常背心/
+*.xlsx
+*.xlsm
+*.xls
+*.csv
+*.sqlite
+*.db
+
+# Local caches and temporary files
+tmp_codex_home/
+.agents/
+*.png
+*.jpg
+*.jpeg

@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>产品开发竞对分析</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="mark">AI</div>
+          <div>
+            <h1>产品开发竞对分析</h1>
+            <p>竞对横向 / VOC / 订单 / 场景</p>
+          </div>
+        </div>
+        <nav class="nav">
+          <a href="#upload" class="active">导入表格</a>
+          <a href="#preview">报告预览</a>
+          <a href="#modules">模块下载</a>
+        </nav>
+        <div class="note">
+          <strong>输入要求</strong>
+          <span>ASIN 工作簿需包含评论分析或订单量分析；导入人必填。</span>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <section id="upload" class="toolbar">
+          <div>
+            <h2>导入表格</h2>
+            <p>上传类目分析表和多个 ASIN 工作簿，系统会自动生成产品开发竞对分析报告。</p>
+          </div>
+          <button id="generateBtn" class="primary" disabled>
+            <span class="icon">↓</span>
+            生成报告
+          </button>
+        </section>
+
+        <section class="upload-grid">
+          <label class="dropzone" id="dropzone">
+            <input id="fileInput" type="file" multiple accept=".xlsx,.xlsm" />
+            <span class="drop-icon">＋</span>
+            <strong>拖入或选择 Excel 文件</strong>
+            <small>建议一次上传：类目分析表 + 每个 ASIN 的订单/评论工作簿</small>
+          </label>
+
+          <div class="panel">
+            <div class="panel-head">
+              <h3>导入信息</h3>
+              <button id="clearBtn" class="ghost">清空</button>
+            </div>
+            <div class="meta-form compact">
+              <label>
+                <span>导入人 *</span>
+                <input id="importerInput" type="text" placeholder="请输入导入人" required />
+              </label>
+              <label>
+                <span>产品分类</span>
+                <input id="categoryInput" type="text" placeholder="日常背心 / 运动背心" />
+              </label>
+              <label>
+                <span>款号</span>
+                <input id="styleInput" type="text" placeholder="请输入款号" />
+              </label>
+              <label>
+                <span>输出报告</span>
+                <select id="reportModeInput">
+                  <option value="vocProduct" selected>VOC-PRODUCT完整报告</option>
+                  <option value="competitor">竞对横向分析报告</option>
+                </select>
+              </label>
+              <label>
+                <span>产品项目</span>
+                <select id="reportTypeInput">
+                  <option value="tank" selected>背心/带罩杯背心</option>
+                  <option value="sexy_sheer">性感透视款</option>
+                  <option value="plus_size_thin_cup">大码薄杯款</option>
+                </select>
+              </label>
+            </div>
+            <div class="panel-head slim">
+              <h3>模型接口配置</h3>
+            </div>
+            <div class="llm-box">
+              <label class="check-row">
+                <input id="llmEnabledInput" type="checkbox" />
+                <span>启用大模型增强分析</span>
+              </label>
+              <div class="meta-form compact llm-fields">
+                <label>
+                  <span>API Base URL</span>
+                  <input id="llmBaseUrlInput" type="url" placeholder="例如：https://api.deepseek.com" />
+                </label>
+                <label>
+                  <span>Model Name</span>
+                  <input id="llmModelInput" type="text" placeholder="例如：deepseek-chat" />
+                </label>
+                <label>
+                  <span>API Key</span>
+                  <input id="llmApiKeyInput" type="password" placeholder="客户自己的模型 API Key" autocomplete="off" />
+                </label>
+                <label>
+                  <span>接口协议</span>
+                  <select id="llmProtocolInput">
+                    <option value="openai-compatible" selected>OpenAI Compatible</option>
+                  </select>
+                </label>
+              </div>
+              <p class="cost-note">请填写客户自己的模型接口；本系统不提供 API Key，也不承担模型调用费用。API Key 只用于本次生成，不进入历史记录。</p>
+            </div>
+            <div class="panel-head slim">
+              <h3>已选择文件</h3>
+            </div>
+            <ul id="fileList" class="file-list">
+              <li class="empty">还没有选择文件</li>
+            </ul>
+          </div>
+        </section>
+
+        <section id="preview" class="status-row">
+          <div class="status-card">
+            <span>识别 ASIN</span>
+            <strong id="asinCount">0</strong>
+          </div>
+          <div class="status-card">
+            <span>输出模块</span>
+            <strong id="moduleCount">0</strong>
+          </div>
+          <div class="status-card wide">
+            <span>处理状态</span>
+            <strong id="statusText">等待上传</strong>
+          </div>
+          <a id="downloadLink" class="download disabled" href="#">导出 Excel</a>
+        </section>
+
+        <section id="modules" class="module-layout">
+          <div class="panel">
+            <div class="panel-head">
+              <h3>开发方向</h3>
+            </div>
+            <ol id="directions" class="directions">
+              <li>生成后显示方向 1 / 2 / 3</li>
+            </ol>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">
+              <h3>模块下载</h3>
+            </div>
+            <div id="moduleTags" class="module-downloads">
+              <span>竞对横向</span>
+              <span>VOC</span>
+              <span>订单颜色尺码</span>
+              <span>使用场景</span>
+              <span>用户画像</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel module-preview-panel">
+          <div class="panel-head">
+            <h3>模块预览</h3>
+            <span>每个模块可单独下载，表格可截图</span>
+          </div>
+          <div id="modulePreview" class="preview-grid">
+            <div class="empty-state">生成后展示 01-14 板块、TOP5好评、TOP5差评。</div>
+          </div>
+        </section>
+
+        <section class="panel table-panel">
+          <div class="panel-head">
+            <h3>ASIN 预览</h3>
+            <span id="tableHint">生成后展示核心字段</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ASIN</th>
+                  <th>品牌/角色</th>
+                  <th>日均销量</th>
+                  <th>VOC结论</th>
+                  <th>优先级</th>
+                </tr>
+              </thead>
+              <tbody id="asinRows">
+                <tr><td colspan="5">暂无数据</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel history-panel">
+          <div class="panel-head">
+            <h3>导入历史</h3>
+            <span>可按日期和产品分类筛选</span>
+          </div>
+          <div class="history-filters">
+            <label>
+              <span>导入日期</span>
+              <input id="historyDateFilter" type="date" />
+            </label>
+            <label>
+              <span>产品分类</span>
+              <input id="historyCategoryFilter" type="text" placeholder="筛选分类" />
+            </label>
+          </div>
+          <div id="historyList" class="history-list">
+            <div class="empty-state">暂无导入记录</div>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
