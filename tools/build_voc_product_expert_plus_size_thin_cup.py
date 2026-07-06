@@ -56,7 +56,7 @@ TAXONOMY = [
     {
         "label": "浅色不透/露点安全",
         "pos": ["not see through", "opaque", "not sheer", "double lined", "thick enough"],
-        "neg": ["see through", "sheer", "thin", "pad through", "pads visible", "nipple", "visible", "white tank"],
+        "neg": [],
         "mechanism": "只有评论明确提到 see through、nipple、show through、visible、thin 等语境时，才判断为遮点/不透安全。",
         "kano": "基本型",
     },
@@ -133,8 +133,8 @@ TAXONOMY = [
     {
         "label": "薄杯无衬/自然胸型",
         "pos": ["unlined", "thin cup", "thin cups", "no padding", "unpadded", "natural shape", "natural"],
-        "neg": ["too thin", "nipple", "nipples", "show through", "see through", "no padding", "needs padding"],
-        "mechanism": "薄杯无衬带来轻薄透气和自然胸型，但杯布、遮点层和面料密度决定是否露点。",
+        "neg": ["too thin", "thin", "sheer", "nipple", "nipples", "show through", "see through", "visible", "no padding", "needs padding"],
+        "mechanism": "薄杯无衬带来轻薄透气和自然胸型；当评论同时指向 thin/sheer 与 nipple/show through 时，真实需求是保持薄杯自然感，同时提升基础遮点安全。",
         "kano": "期望型",
     },
     {
@@ -176,7 +176,7 @@ NEGATIVE_LABELS = {
     "肩带/可调节穿法": "肩带勒/断裂/不稳定",
     "外观颜色/时尚性感": "颜色不符/外观不如图",
     "价格/性价比": "不值/价格偏高",
-    "薄杯无衬/自然胸型": "薄杯露点/遮点不足",
+    "薄杯无衬/自然胸型": "薄杯面料薄+露点透出风险",
     "Minimizer显小/大胸视觉收拢": "不显小/大胸收拢不足",
     "钢圈稳定/不戳不压": "钢圈戳肉/压迫疼痛",
     "背部/侧翼包裹平滑": "副乳/背部勒肉外溢",
@@ -281,7 +281,7 @@ NEGATIVE_KEYWORD_LABELS = [
     (["sag", "falls"], "支撑不足/下垂滑落"),
     (["not a minimizer", "doesn't minimize", "does not minimize", "not minimizing"], "不显小/Minimizer效果弱"),
     (["not enough coverage", "poor coverage", "low coverage", "less coverage", "coverage too low"], "覆盖不足/杯口外溢风险"),
-    (["too thin", "nipple", "nipples", "show through", "see through", "needs padding"], "薄杯露点/遮点不足"),
+    (["too thin", "thin", "sheer", "nipple", "nipples", "show through", "see through", "visible", "needs padding"], "薄杯面料薄+露点透出风险"),
     (["underwire pokes", "wire pokes", "poking", "wire hurts", "wire digs", "underwire uncomfortable"], "钢圈戳肉/压迫疼痛"),
     (["back fat", "side bulge", "side boob", "bulge", "muffin top"], "副乳/背部勒肉外溢"),
     (["not for large", "large chest", "big chest", "ddd", "dd"], "大胸不适配"),
@@ -291,8 +291,7 @@ NEGATIVE_KEYWORD_LABELS = [
     (["too long", "longer than"], "crop太长"),
     (["too short", "very cropped", "super cropped", "shorter than"], "crop太短"),
     (["not cropped", "crop is too", "length"], "crop衣长不合适"),
-    (["see through", "sheer", "thin"], "面料薄/透"),
-    (["nipple", "visible", "pads visible", "pad through"], "露点/杯垫显形"),
+    (["pads visible", "pad through"], "杯垫显形"),
     (["pad moves", "pads move", "cups move"], "杯垫移位"),
     (["cup", "cups", "padding", "pad", "pads"], "罩杯结构问题"),
     (["uniboob", "flatten"], "压胸/胸型不自然"),
@@ -326,10 +325,14 @@ NEGATIVE_TOP_WORD_LABELS = {
     "doesn't minimize": "显小效果不足",
     "does not minimize": "显小效果不足",
     "not minimizing": "不显小",
-    "too thin": "杯布太薄",
-    "nipple": "露点风险",
-    "nipples": "露点风险",
-    "show through": "露点/透出",
+    "too thin": "薄杯面料薄+露点透出风险",
+    "thin": "薄杯面料薄+露点透出风险",
+    "sheer": "薄杯面料薄+露点透出风险",
+    "nipple": "薄杯面料薄+露点透出风险",
+    "nipples": "薄杯面料薄+露点透出风险",
+    "show through": "薄杯面料薄+露点透出风险",
+    "see through": "薄杯面料薄+露点透出风险",
+    "visible": "薄杯面料薄+露点透出风险",
     "needs padding": "遮点不足需加垫",
     "underwire pokes": "钢圈戳肉",
     "wire pokes": "钢圈戳肉",
@@ -648,6 +651,14 @@ def merge_size_text(rows):
 
 def specific_voc_label(base_label, counter, sentiment):
     top_word = counter.most_common(1)[0][0] if counter else ""
+    if sentiment == "差评":
+        words = set(counter)
+        fabric_risk_words = {"thin", "too thin", "sheer", "see through", "show through", "visible"}
+        nipple_risk_words = {"nipple", "nipples", "needs padding"}
+        if words & fabric_risk_words and words & nipple_risk_words:
+            return "薄杯面料薄+露点透出风险"
+        if words & (fabric_risk_words | nipple_risk_words) and base_label == "薄杯无衬/自然胸型":
+            return "薄杯面料薄+露点透出风险"
     if sentiment == "好评" and top_word in POSITIVE_TOP_WORD_LABELS:
         return POSITIVE_TOP_WORD_LABELS[top_word]
     if sentiment == "差评" and top_word in NEGATIVE_TOP_WORD_LABELS:
