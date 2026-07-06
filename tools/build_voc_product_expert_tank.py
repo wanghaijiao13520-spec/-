@@ -473,8 +473,39 @@ def keyword_cell(counter):
     return "；".join(f"{word}:{count}" for word, count in counter.most_common())
 
 
-def keyword_hit_count(text, word):
-    return max(1, text.count(word))
+def is_negated_keyword(text, word):
+    patterns = [
+        rf"(?:no|not|never|doesn['’]?t|does not|without|won['’]?t|will not)\s+(?:\w+\s+){{0,3}}{re.escape(word)}",
+        rf"{re.escape(word)}\s+(?:\w+\s+){{0,3}}(?:no|not|never)",
+    ]
+    return any(re.search(pattern, text, flags=re.I) for pattern in patterns)
+
+
+def keyword_occurrences(text, word):
+    if " " in word:
+        pattern = re.escape(word)
+    else:
+        pattern = rf"\b{re.escape(word)}\b"
+    return [match for match in re.finditer(pattern, text, flags=re.I)]
+
+
+def keyword_hit_count(text, word, sentiment=None):
+    matches = keyword_occurrences(text, word)
+    if sentiment == "差评":
+        matches = [match for match in matches if not is_negated_keyword(text[max(0, match.start() - 40): match.end() + 40], word)]
+    if sentiment == "好评" and word in {"no digging", "no marks", "no lines"}:
+        return len(matches)
+    return len(matches)
+
+
+def keyword_context(text, word, radius=260):
+    matches = keyword_occurrences(text, word)
+    if not matches:
+        return text
+    match = matches[0]
+    start = max(0, match.start() - radius)
+    end = min(len(text), match.end() + radius)
+    return text[start:end]
 
 
 def size_cell(*counters):
@@ -689,8 +720,13 @@ def analyze_asin(asin, path):
                     scenario_evidence.append((scenario, s, text[:240]))
         hit = False
         for rule in TAXONOMY:
-            sentiment_words = [("好评", word) for word in rule["pos"] if word in text_l]
-            sentiment_words += [("差评", word) for word in rule["neg"] if word in text_l]
+            sentiment_words = []
+            for word in rule["pos"]:
+                if keyword_hit_count(text_l, word, "好评"):
+                    sentiment_words.append(("好评", word))
+            for word in rule["neg"]:
+                if keyword_hit_count(text_l, word, "差评"):
+                    sentiment_words.append(("差评", word))
             sentiments_seen = set()
             for sentiment, word in sentiment_words:
                 key = (idx, rule["label"], sentiment)
@@ -700,7 +736,9 @@ def analyze_asin(asin, path):
                 hit = True
                 extracted_reviews.add(idx)
                 context_cup_sizes = extract_keyword_context_cup_sizes(row, word)
-                hit_count = keyword_hit_count(text_l, word)
+                hit_count = keyword_hit_count(text_l, word, sentiment)
+                if not hit_count:
+                    continue
                 if sentiment == "好评":
                     pos[rule["label"]] += hit_count
                     pos_words[rule["label"]][word] += hit_count
@@ -717,7 +755,11 @@ def analyze_asin(asin, path):
                         "评论产品码数": size,
                         "评论型号原文": str(row.get("型号") or ""),
                         "评论提及罩杯码数": "；".join(cup_sizes),
-                        "原文证据片段": text[:300], "使用场景提取": "；".join(row_scenarios), "评论链接": row.get("链接") or "",
+                        "命中关键词": word,
+                        "命中原因": f"{sentiment}关键词命中：{word}",
+                        "关键词上下文": keyword_context(text, word),
+                        "原文证据片段": text,
+                        "使用场景提取": "；".join(row_scenarios), "评论链接": row.get("链接") or "",
                     })
         if not hit and len(unmatched) < 300:
             unmatched.append({
