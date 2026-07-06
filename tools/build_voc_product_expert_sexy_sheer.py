@@ -721,6 +721,39 @@ def is_negated_keyword(text, word):
     return any(re.search(pattern, text, flags=re.I) for pattern in patterns)
 
 
+def refers_to_other_product_problem(text, match):
+    ctx = text[max(0, match.start() - 180): min(len(text), match.end() + 220)].lower()
+    before = text[max(0, match.start() - 140): match.start()].lower()
+    after = text[match.end(): min(len(text), match.end() + 220)].lower()
+    other_product_cues = [
+        "normally", "usually", "other bras", "underwire bras", "previous bras", "most bras",
+        "i hate wearing", "i normally hate", "they normally", "they don't", "they dont",
+    ]
+    solved_by_this_cues = [
+        "don't have that problem", "dont have that problem", "do not have that problem",
+        "doesn't have that problem", "doesnt have that problem", "does not have that problem",
+        "not with this bra", "with this bra i don't", "with this bra i dont", "with this bra i do not",
+        "this bra doesn't", "this bra doesnt", "this bra does not", "this one doesn't", "this one doesnt",
+        "no such problem", "no issue with this", "not a problem with this", "without that problem",
+    ]
+    return any(cue in before or cue in ctx for cue in other_product_cues) and any(cue in after or cue in ctx for cue in solved_by_this_cues)
+
+
+def is_resolved_problem_context(text, match):
+    ctx = text[max(0, match.start() - 120): min(len(text), match.end() + 180)].lower()
+    patterns = [
+        r"(?:don['?]?t|do not|doesn['?]?t|does not)\s+(?:have|give|cause|leave)\s+(?:me\s+)?(?:that\s+)?(?:problem|issue|mark|marks|indentation|indentations)",
+        r"(?:no|without)\s+(?:such\s+)?(?:problem|issue|marks|indentations)",
+        r"(?:doesn['?]?t|does not|don['?]?t|do not)\s+(?:poke|stab|dig|show|ride|roll|slip)",
+        r"(?:not|never)\s+(?:see\s+through|sheer|visible|scratchy|itchy|uncomfortable)",
+    ]
+    return any(re.search(pattern, ctx, flags=re.I) for pattern in patterns)
+
+
+def is_false_negative_match(text, match):
+    return refers_to_other_product_problem(text, match) or is_resolved_problem_context(text, match)
+
+
 def keyword_occurrences(text, word):
     if " " in word:
         pattern = re.escape(word)
@@ -729,14 +762,42 @@ def keyword_occurrences(text, word):
     return [match for match in re.finditer(pattern, text, flags=re.I)]
 
 
-def keyword_hit_count(text, word, sentiment=None):
+INHERENT_NEGATIVE_TERMS = {
+    "uncomfortable", "itchy", "scratchy", "irritation", "rash", "red marks", "chafing", "pain",
+    "poking", "poke", "pokes", "wire hurts", "wire digs", "underwire pokes", "underwire uncomfortable",
+    "too thin", "show through", "see through", "nipple", "nipples", "needs padding",
+    "too small", "too big", "runs small", "runs big", "not true to size", "no support", "not supportive",
+    "poor quality", "cheap", "broke", "fraying", "wrong color", "not as pictured", "not worth", "overpriced",
+}
+COMPLAINT_CUES_FOR_HIGH_STAR = {
+    "too", "not", "no", "never", "can't", "cannot", "doesn't", "didn't", "without", "wish",
+    "problem", "issue", "hate", "unfortunately", "but", "however", "although", "except",
+    "have to", "need to", "needs", "return", "returned", "disappointed", "annoying",
+    "loose", "tight", "small", "big", "large", "short", "long", "wide", "low", "poor", "less",
+    "visible", "show", "sheer", "see through", "nipple", "nipples", "dig", "digs", "hurt", "pain",
+}
+
+
+def has_high_star_complaint_context(text, match, word):
+    ctx = text[max(0, match.start() - 100): min(len(text), match.end() + 140)].lower()
+    word_l = str(word or "").lower()
+    if word_l in INHERENT_NEGATIVE_TERMS:
+        return True
+    return any(cue in ctx for cue in COMPLAINT_CUES_FOR_HIGH_STAR if cue != word_l)
+
+
+def keyword_hit_count(text, word, sentiment=None, star_value=None):
     matches = keyword_occurrences(text, word)
     if sentiment == "差评":
-        matches = [match for match in matches if not is_negated_keyword(text[max(0, match.start() - 40): match.end() + 40], word)]
+        matches = [
+            match for match in matches
+            if not is_negated_keyword(text[max(0, match.start() - 90): match.end() + 120], word)
+            and not is_false_negative_match(text, match)
+            and (not star_value or star_value <= 3 or has_high_star_complaint_context(text, match, word))
+        ]
     if sentiment == "好评" and word in {"no digging", "no marks", "no lines"}:
         return len(matches)
     return len(matches)
-
 
 def keyword_context(text, word, radius=260):
     matches = keyword_occurrences(text, word)
@@ -969,7 +1030,7 @@ def analyze_asin(asin, path):
                 if keyword_hit_count(text_l, word, "好评"):
                     sentiment_words.append(("好评", word))
             for word in rule["neg"]:
-                if keyword_hit_count(text_l, word, "差评"):
+                if keyword_hit_count(text_l, word, "差评", s):
                     sentiment_words.append(("差评", word))
             sentiments_seen = set()
             for sentiment, word in sentiment_words:
@@ -980,7 +1041,7 @@ def analyze_asin(asin, path):
                 hit = True
                 extracted_reviews.add(idx)
                 context_cup_sizes = extract_keyword_context_cup_sizes(row, word)
-                hit_count = keyword_hit_count(text_l, word, sentiment)
+                hit_count = keyword_hit_count(text_l, word, sentiment, s)
                 if not hit_count:
                     continue
                 if sentiment == "好评":
