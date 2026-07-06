@@ -47,10 +47,17 @@ TAXONOMY = [
         "kano": "期望型",
     },
     {
-        "label": "遮点/浅色不透安全",
-        "pos": ["not see through", "opaque", "not sheer", "double lined", "coverage", "thick enough"],
+        "label": "杯面覆盖/包覆安全感",
+        "pos": ["full coverage", "good coverage", "great coverage", "excellent coverage", "enough coverage", "coverage"],
+        "neg": ["not enough coverage", "poor coverage", "low coverage", "less coverage", "coverage too low"],
+        "mechanism": "大码薄杯用户说 coverage 时，优先表示杯面覆盖面积、包覆度和防外溢安全感，不等同于遮乳点。",
+        "kano": "基本型",
+    },
+    {
+        "label": "浅色不透/露点安全",
+        "pos": ["not see through", "opaque", "not sheer", "double lined", "thick enough"],
         "neg": ["see through", "sheer", "thin", "pad through", "pads visible", "nipple", "visible", "white tank"],
-        "mechanism": "面料克重、双层结构、杯色匹配和杯边过渡会影响浅色安全感。",
+        "mechanism": "只有评论明确提到 see through、nipple、show through、visible、thin 等语境时，才判断为遮点/不透安全。",
         "kano": "基本型",
     },
     {
@@ -157,7 +164,8 @@ NEGATIVE_LABELS = {
     "贴肤舒适/无勒痕无刺激": "勒痕/刺痒/不舒适",
     "内置罩杯/免穿内衣": "罩杯结构不稳/杯垫问题",
     "支撑承托/DD+适配": "支撑不足/DD+不适配",
-    "遮点/浅色不透安全": "浅色透/露点/杯垫显形",
+    "杯面覆盖/包覆安全感": "覆盖不足/杯口外溢",
+    "浅色不透/露点安全": "浅色透/露点/杯垫显形",
     "版型显瘦/胸型自然": "胸型怪/压胸/副乳外溢",
     "尺码合身/尺码表准确": "尺码偏差/尺码表不准",
     "衣长比例/crop长短适中": "crop衣长太长/太短",
@@ -186,7 +194,8 @@ POSITIVE_KEYWORD_LABELS = [
     (["wide back", "back coverage", "side support", "side coverage", "smooth back", "back smoothing"], "背部侧翼包裹好"),
     (["perfect length", "good length", "right length", "cropped", "crop top", "not too short", "not too long"], "crop衣长合适"),
     (["built in bra", "built-in bra", "shelf bra", "no bra", "bra-free", "padded bra", "built in cups"], "内置罩杯/免穿内衣"),
-    (["not see through", "opaque", "not sheer", "double lined", "coverage", "thick enough"], "遮点不透/安全感强"),
+    (["full coverage", "good coverage", "great coverage", "excellent coverage", "enough coverage", "coverage"], "杯面覆盖/包覆安全感"),
+    (["not see through", "opaque", "not sheer", "double lined", "thick enough"], "浅色不透/露点安全"),
     (["flattering", "fits well", "nice shape", "snatched", "slimming", "curves", "shape"], "显瘦显身材"),
     (["cute", "sexy"], "外观好看/可外穿"),
     (["quality", "well made", "nice material", "washes well", "durable", "thick fabric"], "质量做工好"),
@@ -229,6 +238,12 @@ POSITIVE_TOP_WORD_LABELS = {
     "doesn't poke": "钢圈不戳",
     "does not poke": "钢圈不戳",
     "no poking": "钢圈不戳",
+    "full coverage": "全罩杯覆盖好",
+    "good coverage": "覆盖度好",
+    "great coverage": "覆盖度好",
+    "excellent coverage": "覆盖度好",
+    "enough coverage": "覆盖面积足够",
+    "coverage": "杯面覆盖/包覆度",
     "wide back": "宽背带包裹",
     "back coverage": "背部覆盖好",
     "side support": "侧翼支撑好",
@@ -245,7 +260,7 @@ POSITIVE_TOP_WORD_LABELS = {
     "no bra": "可免穿内衣",
     "not see through": "不透安全",
     "opaque": "不透安全",
-    "double lined": "双层遮点",
+    "double lined": "双层不透",
     "flattering": "显身材",
     "snatched": "收腰显瘦",
     "quality": "质量好",
@@ -265,6 +280,7 @@ NEGATIVE_KEYWORD_LABELS = [
     (["no support", "not supportive", "lacks support", "not enough support"], "无支撑/支撑不足"),
     (["sag", "falls"], "支撑不足/下垂滑落"),
     (["not a minimizer", "doesn't minimize", "does not minimize", "not minimizing"], "不显小/Minimizer效果弱"),
+    (["not enough coverage", "poor coverage", "low coverage", "less coverage", "coverage too low"], "覆盖不足/杯口外溢风险"),
     (["too thin", "nipple", "nipples", "show through", "see through", "needs padding"], "薄杯露点/遮点不足"),
     (["underwire pokes", "wire pokes", "poking", "wire hurts", "wire digs", "underwire uncomfortable"], "钢圈戳肉/压迫疼痛"),
     (["back fat", "side bulge", "side boob", "bulge", "muffin top"], "副乳/背部勒肉外溢"),
@@ -298,6 +314,11 @@ NEGATIVE_TOP_WORD_LABELS = {
     "not supportive": "支撑不足",
     "lacks support": "支撑不足",
     "not enough support": "支撑不够",
+    "not enough coverage": "覆盖不足",
+    "poor coverage": "覆盖不足",
+    "low coverage": "覆盖偏低",
+    "less coverage": "覆盖面积不足",
+    "coverage too low": "覆盖偏低",
     "sag": "支撑不足/下垂",
     "falls": "支撑滑落",
     "not for large": "大胸不适配",
@@ -554,6 +575,22 @@ def is_negated_keyword(text, word):
     return any(re.search(pattern, text, flags=re.I) for pattern in patterns)
 
 
+def is_negative_coverage_context(text):
+    patterns = [
+        r"(?:not|isn['’]?t|is not|no|without)\s+(?:\w+\s+){0,2}coverage",
+        r"(?:not enough|poor|low|less|insufficient)\s+coverage",
+        r"coverage\s+(?:is|was|feels|seems)?\s*(?:poor|low|lacking|insufficient|not enough)",
+    ]
+    return any(re.search(pattern, text, flags=re.I) for pattern in patterns)
+
+
+def is_body_coverage_context(text, match):
+    start = max(0, match.start() - 24)
+    end = min(len(text), match.end() + 24)
+    ctx = text[start:end].lower()
+    return not re.search(r"\b(?:back|side)\s+coverage\b", ctx)
+
+
 def keyword_occurrences(text, word):
     if " " in word:
         pattern = re.escape(word)
@@ -566,6 +603,12 @@ def keyword_hit_count(text, word, sentiment=None):
     matches = keyword_occurrences(text, word)
     if sentiment == "差评":
         matches = [match for match in matches if not is_negated_keyword(text[max(0, match.start() - 40): match.end() + 40], word)]
+    if sentiment == "好评" and word == "coverage":
+        matches = [
+            match for match in matches
+            if is_body_coverage_context(text, match)
+            and not is_negative_coverage_context(text[max(0, match.start() - 45): match.end() + 45])
+        ]
     if sentiment == "好评" and word in {"no digging", "no marks", "no lines"}:
         return len(matches)
     return len(matches)

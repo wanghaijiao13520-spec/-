@@ -41,6 +41,20 @@ SCRIPT_MAP = {
 }
 
 
+def infer_report_type(files: list[Path], metadata: dict[str, str]) -> str:
+    requested = metadata.get("reportType")
+    if requested:
+        return requested
+    category_text = " ".join(str(metadata.get(key, "")) for key in ["productCategory", "category", "styleNo", "styleNumber"])
+    file_text = " ".join(path.name for path in files)
+    text = f"{category_text} {file_text}".lower()
+    if any(key in text for key in ["大码薄杯", "plus_size_thin_cup", "thin cup", "minimizer"]):
+        return "plus_size_thin_cup"
+    if any(key in text for key in ["性感透视", "sexy_sheer", "sheer"]):
+        return "sexy_sheer"
+    return "tank"
+
+
 def detect_asin_from_file(path: Path) -> str:
     match = re.search(r"B0[A-Z0-9]{8}", path.name.upper())
     if match:
@@ -237,7 +251,7 @@ def append_llm_to_workbook(output: Path, llm_result: dict[str, Any]) -> None:
 
 def build_voc_product_report(files: list[Path], metadata: dict[str, str] | None = None, llm_config: dict[str, str] | None = None) -> dict[str, Any]:
     metadata = metadata or {}
-    report_type = metadata.get("reportType") or "tank"
+    report_type = infer_report_type(files, metadata)
     module, config = load_builder(report_type)
 
     job_id = datetime.now().strftime("%Y%m%d_%H%M%S")
