@@ -3,6 +3,7 @@
 from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
+import json
 import re
 import shutil
 
@@ -22,6 +23,98 @@ SOURCE_DIRS = [
 OUT_DIR = Path("outputs/20260704_plus_size_thin_cup_voc_product")
 SOURCE_COPY = OUT_DIR / "source_inputs"
 OUT_FILE = OUT_DIR / f"VOC_PRODUCT_大码薄杯款产品专家分析_{datetime.now().strftime('%H%M%S')}.xlsx"
+
+
+def load_negative_tag_bank():
+    path = Path(__file__).with_name("voc_negative_tags.json")
+    if not path.exists():
+        return []
+    try:
+        rows = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    cleaned = []
+    for row in rows:
+        tag = str(row.get("tag") or "").strip()
+        phrase = str(row.get("phrase") or "").strip()
+        translation = str(row.get("translation") or "").strip()
+        if tag and phrase:
+            cleaned.append({"tag": tag, "phrase": phrase, "translation": translation})
+    return sorted(cleaned, key=lambda item: len(item["phrase"]), reverse=True)
+
+
+NEGATIVE_TAG_BANK = load_negative_tag_bank()
+NEGATIVE_TAG_BANK_LABELS = {item["tag"] for item in NEGATIVE_TAG_BANK}
+
+
+def negative_tag_phrase_count(text, phrase):
+    phrase_l = str(phrase or "").lower().strip()
+    if not phrase_l:
+        return 0
+    if re.fullmatch(r"[a-z0-9'? -]+", phrase_l):
+        if " " in phrase_l or "-" in phrase_l:
+            return len(re.findall(re.escape(phrase_l), text, flags=re.I))
+        return len(re.findall(r"\b" + re.escape(phrase_l) + r"\b", text, flags=re.I))
+    return text.lower().count(phrase_l)
+
+
+NEGATIVE_CONTEXT_CUES = {
+    "not", "no", "never", "can't", "cannot", "doesn't", "didn't", "too", "very", "super",
+    "small", "large", "big", "loose", "tight", "short", "long", "wide", "low", "poor",
+    "scratchy", "itchy", "rough", "pain", "hurt", "dig", "poking", "poke", "uncomfortable",
+    "problem", "issue", "return", "returned", "disappointed", "broke", "missing", "wrong",
+    "weird", "awkward", "gaping", "spill", "spillage", "roll", "rolls", "slide", "slip",
+    "thin", "sheer", "visible", "show", "see through", "nipple", "nipples",
+}
+GENERIC_EXTERNAL_TERMS = {
+    "band", "strap", "straps", "cup", "cups", "pad", "pads", "padding", "wire", "wires",
+    "support", "coverage", "smooth", "comfortable", "stay in place", "no padding",
+}
+
+
+def negative_tag_phrase_terms(phrase):
+    phrase = str(phrase or "").strip()
+    if not phrase:
+        return []
+    parts = [part.strip() for part in re.split(r"\s*[,/]\s*", phrase) if len(part.strip()) >= 3]
+    terms = parts if len(parts) > 1 else [phrase]
+    result = []
+    for term in terms:
+        low = term.lower().strip()
+        if low in GENERIC_EXTERNAL_TERMS:
+            continue
+        if len(low.split()) == 1 and len(low) < 6 and not any(cue in low for cue in NEGATIVE_CONTEXT_CUES):
+            continue
+        result.append(term)
+    return result
+
+
+def negative_context_for_term(text, term):
+    matches = keyword_occurrences(text, term)
+    if not matches:
+        return False
+    for match in matches:
+        ctx = text[max(0, match.start() - 80): match.end() + 80].lower()
+        if any(cue in ctx for cue in NEGATIVE_CONTEXT_CUES):
+            return True
+    return False
+
+
+def external_negative_tag_hits(text, star_value=None):
+    hits = []
+    for item in NEGATIVE_TAG_BANK:
+        term_counts = Counter()
+        for term in negative_tag_phrase_terms(item["phrase"]):
+            count = negative_tag_phrase_count(text, term)
+            if not count:
+                continue
+            if star_value and star_value >= 4 and not negative_context_for_term(text, term):
+                continue
+            term_counts[term] += count
+        if term_counts:
+            phrase_hit = "?".join(f"{term}:{count}" for term, count in term_counts.items())
+            hits.append((item["tag"], phrase_hit, item["translation"], sum(term_counts.values())))
+    return hits
 
 
 TAXONOMY = [
@@ -651,6 +744,8 @@ def merge_size_text(rows):
 
 def specific_voc_label(base_label, counter, sentiment):
     top_word = counter.most_common(1)[0][0] if counter else ""
+    if sentiment == "差评" and base_label in NEGATIVE_TAG_BANK_LABELS:
+        return base_label
     if sentiment == "差评":
         words = set(counter)
         fabric_risk_words = {"thin", "too thin", "sheer", "see through", "show through", "visible"}
@@ -888,6 +983,30 @@ def analyze_asin(asin, path):
                         "原文证据片段": text,
                         "使用场景提取": "；".join(row_scenarios), "评论链接": row.get("链接") or "",
                     })
+        for tag, phrase, translation, hit_count in external_negative_tag_hits(text_l, s):
+            hit = True
+            extracted_reviews.add(idx)
+            context_cup_sizes = extract_keyword_context_cup_sizes(row, phrase)
+            neg[tag] += hit_count
+            neg_words[tag][phrase] += hit_count
+            for cup_size in context_cup_sizes:
+                neg_sizes[tag][cup_size] += hit_count
+            evidence.append({
+                "ASIN": asin,
+                "\u54c1\u724c": brand,
+                "VOC\u6807\u7b7e": tag,
+                "\u60c5\u7eea": "\u5dee\u8bc4",
+                "\u661f\u7ea7": s,
+                "\u8bc4\u8bba\u4ea7\u54c1\u7801\u6570": size,
+                "\u8bc4\u8bba\u578b\u53f7\u539f\u6587": str(row.get("\u578b\u53f7") or ""),
+                "\u8bc4\u8bba\u63d0\u53ca\u7f69\u676f\u7801\u6570": "\uff1b".join(cup_sizes),
+                "\u547d\u4e2d\u5173\u952e\u8bcd": f"{phrase}:{hit_count}",
+                "\u547d\u4e2d\u539f\u56e0": f"\u5dee\u8bc4\u6807\u7b7e\u8868\u57fa\u7840\u7ffb\u8bd1\u547d\u4e2d\uff1a{phrase} => {translation}\uff1b\u5df2\u4fdd\u7559\u5168\u53e5\u8bc4\u8bba\u4f9b\u7528\u6237\u6d1e\u5bdf\u590d\u6838",
+                "\u5173\u952e\u8bcd\u4e0a\u4e0b\u6587": keyword_context(text, phrase),
+                "\u539f\u6587\u8bc1\u636e\u7247\u6bb5": text,
+                "\u4f7f\u7528\u573a\u666f\u63d0\u53d6": "\uff1b".join(row_scenarios),
+                "\u8bc4\u8bba\u94fe\u63a5": row.get("\u94fe\u63a5") or "",
+            })
         if not hit:
             unmatched.append({
                 "ASIN": asin, "品牌": brand, "星级": s,
@@ -1295,6 +1414,15 @@ def build_workbook(data_by_asin, files):
                 f"核心差评={top_cell(data['neg'], sum(data['neg'].values()), 3) or '无'}。"
             )
             persona_rows.append(row)
+    for item in NEGATIVE_TAG_BANK:
+        translation_rows.append({
+            "中文标签": item["tag"],
+            "正向英文关键词": "",
+            "负向英文关键词": item["phrase"],
+            "产品机制": f"差评标签表基础翻译：{item['translation']}；最终仍需结合全句评论阅读理解判断。",
+            "Kano属性": "基础VOC翻译",
+        })
+
     for rule in TAXONOMY:
         translation_rows.append({
             "中文标签": rule["label"], "正向英文关键词": "；".join(rule["pos"]), "负向英文关键词": "；".join(rule["neg"]),
