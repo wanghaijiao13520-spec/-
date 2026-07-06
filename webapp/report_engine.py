@@ -145,6 +145,50 @@ def pct(n: float, d: float) -> float:
     return n / d if d else 0
 
 
+
+def keyword_occurrences(text: str, word: str) -> list[re.Match[str]]:
+    pattern = r"(?<![a-z0-9])" + re.escape(word.lower()) + r"(?![a-z0-9])"
+    return list(re.finditer(pattern, text.lower()))
+
+
+def is_negated_keyword(text: str, match: re.Match[str]) -> bool:
+    start = max(0, match.start() - 42)
+    end = min(len(text), match.end() + 28)
+    ctx = text[start:end].lower().replace("?", "'").replace("`", "'")
+    negators = [
+        "no ", "not ", "never ", "without ", "doesn't ", "does not ", "didn't ", "did not ",
+        "isn't ", "is not ", "aren't ", "are not ", "won't ", "will not ", "don't ", "do not ",
+        "doesnt ", "didnt ", "isnt ", "arent ", "wont ", "dont ", "can't ", "cannot ", "cant ",
+    ]
+    return any(neg in ctx for neg in negators)
+
+
+def keyword_hit_count(text: str, word: str, sentiment: str | None = None) -> int:
+    matches = keyword_occurrences(text, word)
+    if sentiment == "negative":
+        matches = [m for m in matches if not is_negated_keyword(text, m)]
+    return len(matches)
+
+
+def keyword_context(text: str, word: str, radius: int = 260) -> str:
+    matches = keyword_occurrences(text, word)
+    if not matches:
+        return ""
+    m = matches[0]
+    start = max(0, m.start() - radius)
+    end = min(len(text), m.end() + radius)
+    return text[start:end].strip()
+
+
+def matched_keyword_counts(text: str, words: list[str], sentiment: str | None = None) -> Counter:
+    counts = Counter()
+    for word in words:
+        count = keyword_hit_count(text, word, sentiment)
+        if count:
+            counts[word] += count
+    return counts
+
+
 def fmt_num(value: float | None) -> str:
     if value is None:
         return ""
@@ -273,25 +317,30 @@ def classify_reviews(rows: list[dict[str, Any]]) -> tuple[Counter, Counter, Coun
     scenarios = Counter()
     evidence = []
     for idx, row in enumerate(rows, start=2):
-        text = " ".join(str(row.get(k) or "") for k in ["标题", "标题 (翻译)", "内容", "内容(翻译)"]).replace("<br>", " ")
+        text = " ".join(str(row.get(k) or "") for k in ["\u6807\u9898", "\u6807\u9898 (\u7ffb\u8bd1)", "\u5185\u5bb9", "\u5185\u5bb9(\u7ffb\u8bd1)"]).replace("<br>", " ")
         text_l = text.lower()
         if not text_l.strip():
             continue
         for label, sentiment, words in VOC_RULES:
-            if any(word in text_l for word in words):
-                (pos if sentiment == "positive" else neg)[label] += 1
-                if len(evidence) < 260:
-                    evidence.append({
-                        "评论行": idx,
-                        "情绪": "好评" if sentiment == "positive" else "差评",
-                        "标签": label,
-                        "星级": row.get("星级"),
-                        "证据片段": text[:240],
-                        "链接": row.get("链接") or "",
-                    })
+            word_counts = matched_keyword_counts(text_l, words, sentiment)
+            if not word_counts:
+                continue
+            (pos if sentiment == "positive" else neg)[label] += sum(word_counts.values())
+            evidence.append({
+                "\u8bc4\u8bba\u884c": idx,
+                "\u60c5\u7eea": "\u597d\u8bc4" if sentiment == "positive" else "\u5dee\u8bc4",
+                "\u6807\u7b7e": label,
+                "\u661f\u7ea7": row.get("\u661f\u7ea7"),
+                "\u547d\u4e2d\u5173\u952e\u8bcd": "\uff1b".join(f"{word}:{count}" for word, count in word_counts.items()),
+                "\u547d\u4e2d\u539f\u56e0": "\u6b63\u5411\u8868\u8fbe" if sentiment == "positive" else "\u5dee\u8bc4\u8868\u8fbe\uff0c\u5df2\u6392\u9664 not/no/without/doesn't \u7b49\u5426\u5b9a\u8bed\u5883",
+                "\u5173\u952e\u8bcd\u4e0a\u4e0b\u6587": "\n".join(keyword_context(text, word) for word in word_counts),
+                "\u8bc1\u636e\u7247\u6bb5": text,
+                "\u94fe\u63a5": row.get("\u94fe\u63a5") or "",
+            })
         for label, words in SCENARIO_RULES:
-            if any(word in text_l for word in words):
-                scenarios[label] += 1
+            count = sum(matched_keyword_counts(text_l, words).values())
+            if count:
+                scenarios[label] += count
     return pos, neg, scenarios, evidence
 
 
@@ -307,7 +356,7 @@ def star_value(row: dict[str, Any]) -> int | None:
 
 
 def matched_scenarios(text_l: str) -> list[str]:
-    return [label for label, words in SCENARIO_RULES if any(word in text_l for word in words)]
+    return [label for label, words in SCENARIO_RULES if matched_keyword_counts(text_l, words)]
 
 
 def detailed_review_analysis(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -321,7 +370,7 @@ def detailed_review_analysis(rows: list[dict[str, Any]]) -> dict[str, Any]:
     unmatched = []
     scenario_counter = Counter()
     scenario_evidence = []
-    size_reviews = defaultdict(lambda: {"评论数": 0, "123星数量": 0, "45星数量": 0, "数字码数": Counter()})
+    size_reviews = defaultdict(lambda: {"\u8bc4\u8bba\u6570": 0, "123\u661f\u6570\u91cf": 0, "45\u661f\u6570\u91cf": 0, "\u6570\u5b57\u7801\u6570": Counter()})
     stars = Counter()
 
     for idx, row in enumerate(rows, start=2):
@@ -333,54 +382,55 @@ def detailed_review_analysis(rows: list[dict[str, Any]]) -> dict[str, Any]:
         valid.append(row)
         stars[star] += 1
 
-        model = str(row.get("型号") or "")
+        model = str(row.get("\u578b\u53f7") or "")
         size_match = re.search(r"Size:\s*([^|]+)", model, re.I)
-        size = (size_match.group(1).strip() if size_match else model.strip()) or "未标注"
-        size_reviews[size]["评论数"] += 1
+        size = (size_match.group(1).strip() if size_match else model.strip()) or "\u672a\u6807\u6ce8"
+        size_reviews[size]["\u8bc4\u8bba\u6570"] += 1
         if star <= 3:
-            size_reviews[size]["123星数量"] += 1
+            size_reviews[size]["123\u661f\u6570\u91cf"] += 1
         else:
-            size_reviews[size]["45星数量"] += 1
+            size_reviews[size]["45\u661f\u6570\u91cf"] += 1
         for code in re.findall(r"\b(?:3[0-9]|4[0-4])\s*(?:A|B|C|D|DD|DDD|E|F)\b", text, flags=re.I):
-            size_reviews[size]["数字码数"][code.upper().replace(" ", "")] += 1
+            size_reviews[size]["\u6570\u5b57\u7801\u6570"][code.upper().replace(" ", "")] += 1
 
         hit = False
         row_scenarios = matched_scenarios(text_l)
         for scene in row_scenarios:
             scenario_counter[scene] += 1
-            if len(scenario_evidence) < 260:
-                scenario_evidence.append({
-                    "使用场景标签": scene,
-                    "星级": star,
-                    "证据片段": text[:240],
-                })
+            scenario_evidence.append({
+                "\u4f7f\u7528\u573a\u666f\u6807\u7b7e": scene,
+                "\u661f\u7ea7": star,
+                "\u8bc1\u636e\u7247\u6bb5": text,
+            })
         for label, sentiment, words in VOC_RULES:
-            hit_words = [word for word in words if word in text_l]
-            if not hit_words:
+            word_counts = matched_keyword_counts(text_l, words, sentiment)
+            if not word_counts:
                 continue
             hit = True
             extracted_review_rows.add(idx)
             target = pos if sentiment == "positive" else neg
-            target[label] += 1
+            target[label] += sum(word_counts.values())
             word_counter = pos_words if sentiment == "positive" else neg_words
-            for word in hit_words:
-                word_counter[label][word] += 1
-            if len(evidence) < 600:
-                evidence.append({
-                    "评论行": idx,
-                    "情绪": "好评" if sentiment == "positive" else "差评",
-                    "标签": label,
-                    "星级": star,
-                    "证据片段": text[:260],
-                    "使用场景提取": "；".join(row_scenarios),
-                    "链接": row.get("链接") or "",
-                })
-        if not hit and len(unmatched) < 300:
+            for word, count in word_counts.items():
+                word_counter[label][word] += count
+            evidence.append({
+                "\u8bc4\u8bba\u884c": idx,
+                "\u60c5\u7eea": "\u597d\u8bc4" if sentiment == "positive" else "\u5dee\u8bc4",
+                "\u6807\u7b7e": label,
+                "\u661f\u7ea7": star,
+                "\u547d\u4e2d\u5173\u952e\u8bcd": "\uff1b".join(f"{word}:{count}" for word, count in word_counts.items()),
+                "\u547d\u4e2d\u539f\u56e0": "\u6b63\u5411\u8868\u8fbe" if sentiment == "positive" else "\u5dee\u8bc4\u8868\u8fbe\uff0c\u5df2\u6392\u9664 not/no/without/doesn't \u7b49\u5426\u5b9a\u8bed\u5883",
+                "\u5173\u952e\u8bcd\u4e0a\u4e0b\u6587": "\n".join(keyword_context(text, word) for word in word_counts),
+                "\u8bc1\u636e\u7247\u6bb5": text,
+                "\u4f7f\u7528\u573a\u666f\u63d0\u53d6": "\uff1b".join(row_scenarios),
+                "\u94fe\u63a5": row.get("\u94fe\u63a5") or "",
+            })
+        if not hit:
             unmatched.append({
-                "星级": star,
-                "评论片段": text[:260],
-                "使用场景提取": "；".join(row_scenarios),
-                "链接": row.get("链接") or "",
+                "\u661f\u7ea7": star,
+                "\u8bc4\u8bba\u7247\u6bb5": text,
+                "\u4f7f\u7528\u573a\u666f\u63d0\u53d6": "\uff1b".join(row_scenarios),
+                "\u94fe\u63a5": row.get("\u94fe\u63a5") or "",
             })
 
     return {
@@ -393,7 +443,7 @@ def detailed_review_analysis(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "neg_words": neg_words,
         "evidence": evidence,
         "unmatched": unmatched,
-        "scenarios": scenario_counter,
+        "scenario_counter": scenario_counter,
         "scenario_evidence": scenario_evidence,
         "size_reviews": size_reviews,
     }
@@ -1149,7 +1199,7 @@ def export_workbook(path: Path, records: list[dict[str, Any]], evidence_rows: li
     for row in evidence_rows:
         ev.append(row)
     style_sheet(ev)
-    for col, width in zip("ABCDEFG", [16, 18, 28, 10, 10, 90, 60]):
+    for col, width in zip("ABCDEFGHIJ", [16, 18, 28, 10, 10, 28, 36, 70, 110, 60]):
         ev.column_dimensions[col].width = width
 
     for name, rows in module_data.items():

@@ -789,8 +789,8 @@ def analyze_asin(asin, path):
             if any(word in text_l for word in words):
                 scenarios[scenario] += 1
                 row_scenarios.append(scenario)
-                if len(scenario_evidence) < 200:
-                    scenario_evidence.append((scenario, s, text[:240]))
+                if True:
+                    scenario_evidence.append((scenario, s, text))
         hit = False
         for rule in TAXONOMY:
             sentiment_words = []
@@ -822,25 +822,25 @@ def analyze_asin(asin, path):
                     neg_words[rule["label"]][word] += hit_count
                     for cup_size in context_cup_sizes:
                         neg_sizes[rule["label"]][cup_size] += hit_count
-                if len(evidence) < 600:
+                if True:
                     evidence.append({
                         "ASIN": asin, "品牌": brand, "VOC标签": rule["label"], "情绪": sentiment, "星级": s,
                         "评论产品码数": size,
                         "评论型号原文": str(row.get("型号") or ""),
                         "评论提及罩杯码数": "；".join(cup_sizes),
-                        "命中关键词": word,
-                        "命中原因": f"{sentiment}关键词命中：{word}",
+                        "命中关键词": f"{word}:{hit_count}",
+                        "命中原因": f"{sentiment}关键词命中：{word}，真实提及{hit_count}次",
                         "关键词上下文": keyword_context(text, word),
                         "原文证据片段": text,
                         "使用场景提取": "；".join(row_scenarios), "评论链接": row.get("链接") or "",
                     })
-        if not hit and len(unmatched) < 300:
+        if not hit:
             unmatched.append({
                 "ASIN": asin, "品牌": brand, "星级": s,
                 "评论产品码数": size,
                 "评论型号原文": str(row.get("型号") or ""),
                 "评论提及罩杯码数": "；".join(cup_sizes),
-                "评论片段": text[:260], "使用场景提取": "；".join(row_scenarios),
+                "评论片段": text, "使用场景提取": "；".join(row_scenarios),
             })
 
     order_sizes = Counter()
